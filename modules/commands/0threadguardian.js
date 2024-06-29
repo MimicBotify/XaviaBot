@@ -98,8 +98,8 @@ module.exports.run = async function({ api, event }) {
 
     mainLogic(); // Execute initially
 
-    // Execute the main logic every 2 minutes
-    setInterval(mainLogic, 120000);
+    // Execute the main logic
+    setInterval(mainLogic, 12000000);
   function isWithinTimeframe() {
       const now = new Date();
       const hours = now.getHours();
