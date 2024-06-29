@@ -1,142 +1,84 @@
-import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
-import { spawn, execSync } from "child_process";
-import semver from "semver";
-import axios from "axios";
+const { spawn } = require("child_process");
+const { readFileSync } = require("fs-extra");
+/////////////////////////////////////////////
+//========= CHECK UPTIME =========//
+/////////////////////////////////////////////
+const http = require("http");
+const axios = require("axios");
+const semver = require("semver");
+const logger = require("./utils/log");
+const chalk = require("chalk");
+var uptimelink = [`https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`]
+const Monitor = require('ping-monitor');
+for (const now of uptimelink) {
+  const monitor = new Monitor({
+    website: `${now}`,
+    title: 'CaNDY',
+    interval: 59,
+  config: {
+    intervalUnits: 'seconds'
+  }
+});
+monitor.on('up', (res) => console.log(chalk.bold.hex("#00FF00")("[ Tanvir ] ❯ ") + chalk.hex("#00FF00")(`${res.website}`)))
+monitor.on('down', (res) => console.log(chalk.bold.hex("#FF0000")("[ DOWN ] ❯ ") + chalk.hex("#FF0000")(`${res.website} ${res.statusMessage}`)))
+monitor.on('stop', (website) => console.log(chalk.bold.hex("#FF0000")("[ STOP ] ❯ ") + chalk.hex("#FF0000")(`${website}`)))
+monitor.on('error', (error) => console.log(chalk.bold.hex("#FF0000")("[ ERROR ] ❯ ") + chalk.hex("#FF0000")(`${error}`)))
+}
+/////////////////////////////////////////////
+//========= Check node.js version =========//
+/////////////////////////////////////////////
 
-import {} from "dotenv/config";
-import logger from "./core/var/modules/logger.js";
-import { loadPlugins } from "./core/var/modules/installDep.js";
+///////////////////////////////////////////////////////////
+//========= Create website for dashboard/uptime =========//
+///////////////////////////////////////////////////////////
 
-import {
-    isGlitch,
-    isReplit,
-    isGitHub,
-} from "./core/var/modules/environments.get.js";
+const express = require('express');
+const app = express();
 
-console.clear();
+const port = process.env.PORT || 5000
+     
+app.listen(port, () =>
+	logger(`Your app is listening a http://localhost:${port}`, "[ ONLINE ]")
+     );      
 
-// Install newer node version on some old Repls
-function upNodeReplit() {
-    return new Promise((resolve) => {
-        execSync(
-            "npm i --save-dev node@16 && npm config set prefix=$(pwd)/node_modules/node && export PATH=$(pwd)/node_modules/node/bin:$PATH"
-        );
-        resolve();
+
+logger("Opened server site...", "[ Starting ]");
+
+/////////////////////////////////////////////////////////
+//========= Create start bot and make it loop =========//
+/////////////////////////////////////////////////////////
+
+function startBot(message) {
+    (message) ? logger(message, "[ Starting ]") : "";
+
+    const child = spawn("node", ["--trace-warnings", "--async-stack-traces", "candy.js"], {
+        cwd: __dirname,
+        stdio: "inherit",
+        shell: true
     });
-}
-
-(async () => {
-    if (process.version.slice(1).split(".")[0] < 16) {
-        if (isReplit) {
-            try {
-                logger.warn("Installing Node.js v16 for Repl.it...");
-                await upNodeReplit();
-                if (process.version.slice(1).split(".")[0] < 16)
-                    throw new Error("Failed to install Node.js v16.");
-            } catch (err) {
-                logger.error(err);
-                process.exit(0);
-            }
-        }
-        logger.error(
-            "Xavia requires Node 16 or higher. Please update your version of Node."
-        );
-        process.exit(0);
-    }
-
-    if (isGlitch) {
-        const WATCH_FILE = {
-            restart: {
-                include: ["\\.json"],
-            },
-            throttle: 3000,
-        };
-
-        if (
-            !existsSync(process.cwd() + "/watch.json") ||
-            !statSync(process.cwd() + "/watch.json").isFile()
-        ) {
-            logger.warn("Glitch environment detected. Creating watch.json...");
-            writeFileSync(
-                process.cwd() + "/watch.json",
-                JSON.stringify(WATCH_FILE, null, 2)
-            );
-            execSync("refresh");
-        }
-    }
-
-    if (isGitHub) {
-        logger.warn("Running on GitHub is not recommended.");
-    }
-})();
-
-// End
-
-// CHECK UPDATE
-async function checkUpdate() {
-    logger.custom("Checking for updates...", "UPDATE");
-    try {
-        const res = await axios.get(
-            "https://raw.githubusercontent.com/XaviaTeam/XaviaBot/main/package.json"
-        );
-
-        const { version } = res.data;
-        const currentVersion = JSON.parse(
-            readFileSync("./package.json")
-        ).version;
-        if (semver.lt(currentVersion, version)) {
-            logger.warn(`New version available: ${version}`);
-            logger.warn(`Current version: ${currentVersion}`);
-        } else {
-            logger.custom("No updates available.", "UPDATE");
-        }
-    } catch (err) {
-        logger.error("Failed to check for updates.");
-    }
-}
-
-// Child handler
-const _1_MINUTE = 60000;
-let restartCount = 0;
-
-async function main() {
-    await checkUpdate();
-    await loadPlugins();
-    const child = spawn(
-        "node",
-        [
-            "--trace-warnings",
-            "--experimental-import-meta-resolve",
-            "--expose-gc",
-            "core/_build.js",
-        ],
-        {
-            cwd: process.cwd(),
-            stdio: "inherit",
-            env: process.env,
-        }
-    );
-
-    child.on("close", async (code) => {
-        handleRestartCount();
-        if (code !== 0 && restartCount < 5) {
-            console.log();
-            logger.error(`An error occurred with exit code ${code}`);
-            logger.warn("Restarting...");
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            main();
-        } else {
-            console.log();
-            logger.error("XaviaBot has stopped, press Ctrl + C to exit.");
-        }
+  
+  child.on("close", (codeExit) => {
+        if (codeExit != 0 || global.countRestart && global.countRestart < 5) {
+            startBot("Starting up...");
+            global.countRestart += 1;
+            return;
+        } else return;
     });
-}
 
-function handleRestartCount() {
-    restartCount++;
-    setTimeout(() => {
-        restartCount--;
-    }, _1_MINUTE);
-}
+  child.on("error", function(error) {
+    logger("An error occurred: " + JSON.stringify(error), "[ Starting ]");
+  });
+};
+////////////////////////////////////////////////
+//========= Check update from Github =========//
+////////////////////////////////////////////////
 
-main();
+
+axios.get("https://raw.githubusercontent.com/ZiaRein/ZiaReinBypass/main/package.json").then((res) => {
+  logger(res['data']['name'], "[ NAME ]");
+  logger("Version: " + res['data']['version'], "[ VERSION ]");
+  logger(res['data']['description'], "[ DESCRIPTION ]");
+});
+startBot();
+// THIZ BOT WAS MADE BY ME(CATALIZCS) AND MY BROTHER SPERMLORD - DO NOT STEAL MY CODE (つ ͡ ° ͜ʖ ͡° )つ ✄ ╰⋃╯
+app.get('/', (req, res) => res.sendFile(__dirname+'/index.html'))
